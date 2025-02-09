@@ -1,7 +1,7 @@
 # GitDev TODO
 
 - [ ] Implement better error handling for GitHub API requests
-- [ ] Add unit tests for GitHub authentication and repository management
+- [x] Add unit tests for GitHub authentication and repository management
 - [x] Improve user input validation and error messages
 - [ ] Enhance logging for debugging and tracking API calls
 - [ ] Implement configuration file support for client credentials
