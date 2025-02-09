@@ -8,7 +8,7 @@
 - [ ] Add support for managing repository collaborators
 - [ ] Create a detailed guide on using the tool with examples
 - [ ] Optimize performance for large repository operations
-- [ ] Support additional Git commands like rebase and stash
+- [x] Support additional Git commands like rebase and stash
 - [ ] Implement a CI/CD pipeline for automated testing and deployment
 - [ ] Improve documentation with visuals and diagrams
 - [ ] Refactor code for better maintainability and modularity
