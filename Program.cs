@@ -68,6 +68,8 @@ class GitDev
         Console.WriteLine("  dev branch - Create a branch");
         Console.WriteLine("  dev merge - Merge a branch");
         Console.WriteLine("  dev push - Push changes");
+        Console.WriteLine("  dev stash - Stash changes");
+        Console.WriteLine("  dev rebase - Rebase branch");
         Console.WriteLine("  dev pull - Pull changes");
         Console.WriteLine("  dev list - List branches");
         Console.WriteLine("  dev status - Show repository status");
