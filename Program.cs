@@ -20,7 +20,7 @@ class GitDev
     static GitHubClient client;
     static string username;
 
-    static string clientId = "YOUR_CLIENT_ID";
+    static string clientId = "Iv23liIAUGDEbAGLQaRr";
     static string clientSecret = "YOUR_CLIENT_SECRET";
     static string redirectUri = "http://localhost:5000/callback";
 
@@ -179,11 +179,35 @@ class GitDev
             {
                 logger.Error("Authentication failed. No authorization code received.");
                 Console.WriteLine("Authentication failed. No authorization code received.");
+                response.StatusCode = 400;
+                byte[] errorBuffer = Encoding.UTF8.GetBytes("<html><body><h2>Authentication Failed</h2><p>No authorization code received.</p></body></html>");
+                response.OutputStream.Write(errorBuffer, 0, errorBuffer.Length);
+                response.OutputStream.Close();
                 return;
             }
 
             response.StatusCode = 200;
-            byte[] buffer = Encoding.UTF8.GetBytes("Authentication successful! You can now close this window!");
+            string successHtml = @"
+            <html>
+            <head>
+                <title>GitDev Authentication</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f4; }
+                    .container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 10px 0px #aaa; display: inline-block; }
+                    h2 { color: #333; }
+                    p { font-size: 18px; }
+                    .success { color: green; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <div class='container'>
+                    <h2>Authentication Successful!</h2>
+                    <p class='success'>You can now close this window and return to GitDev.</p>
+                </div>
+            </body>
+            </html>";
+
+            byte[] buffer = Encoding.UTF8.GetBytes(successHtml);
             response.OutputStream.Write(buffer, 0, buffer.Length);
             response.OutputStream.Close();
             listener.Stop();
@@ -205,6 +229,7 @@ class GitDev
             Console.WriteLine($"Error during authentication: {ex.Message}");
         }
     }
+
 
     static async Task<string> ExchangeCodeForToken(string code)
     {
