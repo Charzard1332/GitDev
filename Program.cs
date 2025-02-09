@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 using LibGit2Sharp;
+using LibGit2Sharp.Handlers;
 using Octokit;
 using System.Threading.Tasks;
 using System.Diagnostics;
@@ -229,7 +230,11 @@ class GitDev
                             return;
                         }
                         var signature = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
-                        repo.Rebase.Start(repo.Head, branch, repo.Head, new Identity(username, "email@example.com"), new RebaseOptions());
+                        var rebaseOptions = new RebaseOptions
+                        {
+                            FileConflictStrategy = CheckoutFileConflictStrategy.Merge
+                        };
+                        repo.Rebase.Start(repo.Head, branch, repo.Head, new Identity(username, "email@example.com"), rebaseOptions);
                         logger.Info($"Successfully rebased onto {rebaseBranch}"); // logging
                         Console.WriteLine($"Successfully rebased onto {rebaseBranch}.");
                     }
@@ -254,7 +259,8 @@ class GitDev
                 {
                     using (var repo = new LibGit2Sharp.Repository(repoPath))
                     {
-                        var stashIndex = repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed Changes");
+                        var stashIndex = repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed changes");
+                        repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed changes");
                         logger.Info($"Changes stashed successfully with index {stashIndex}"); // logging
                         Console.WriteLine($"Changes stashed successfully with index {stashIndex}");
                     }
