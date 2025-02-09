@@ -2,7 +2,7 @@
 
 - [ ] Implement better error handling for GitHub API requests
 - [ ] Add unit tests for GitHub authentication and repository management
-- [ ] Improve user input validation and error messages
+- [x] Improve user input validation and error messages
 - [ ] Enhance logging for debugging and tracking API calls
 - [ ] Implement configuration file support for client credentials
 - [ ] Add support for managing repository collaborators
