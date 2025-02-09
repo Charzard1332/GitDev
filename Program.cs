@@ -191,6 +191,64 @@ class GitDev
                 LibGit2Sharp.Repository.Init(repoPath);
                 Console.WriteLine("Initialized empty Git repository.");
                 break;
+            case "rebase":
+                Console.Write("Enter local repository path: ");
+                repoPath = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                {
+                    Console.WriteLine("Invalid repository path.");
+                    return;
+                }
+                Console.Write("Enter branch to rebase onto: ");
+                string rebaseBranch = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(rebaseBranch))
+                {
+                    Console.WriteLine("Branch name cannot be empty.");
+                    return;
+                }
+                Console.WriteLine($"Rebasing onto {rebaseBranch}...");
+                try
+                {
+                    using (var repo = new LibGit2Sharp.Repository(repoPath))
+                    {
+                        var branch = repo.Branches[rebaseBranch];
+                        if (branch == null)
+                        {
+                            Console.WriteLine("Branch not found.");
+                            return;
+                        }
+                        var signature = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
+                        repo.Rebase.Start(repo.Head, branch, repo.Head, new Identity(username, "email@example.com"), new RebaseOptions());
+                        Console.WriteLine($"Successfully rebased onto {rebaseBranch}.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Rebase failed: {ex.Message}");
+                }
+                break;
+            case "stash":
+                Console.Write("Enter local repository path: ");
+                repoPath = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                {
+                    Console.WriteLine("Invalid repository path.");
+                    return;
+                }
+                Console.WriteLine("Stashing changes...");
+                try
+                {
+                    using (var repo = new LibGit2Sharp.Repository(repoPath))
+                    {
+                        var stashIndex = repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed Changes");
+                        Console.WriteLine($"Changes stashed successfully with index {stashIndex}");
+                    }
+                }
+                catch (Exception EX)
+                {
+                    Console.WriteLine($"Stash failed: {EX.Message}");
+                }
+                break;
             case "create-repo":
                 Console.Write("Enter new repository name: ");
                 string repoName = Console.ReadLine()?.Trim();
