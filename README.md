@@ -36,4 +36,4 @@ Feel free to submit **issues** or **pull requests** to improve the project!
 ---
 
 ## 📌 Disclaimer
-This project is for **educational purposes** and is **not affiliated with Discord** in any way.
+This project is for **educational purposes** and is **not affiliated with GitHub** in any way.
