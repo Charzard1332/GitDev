@@ -13,8 +13,8 @@ class GitDev
     static GitHubClient client;
     static string username;
 
-    static string clientId = "YOUR_GITHUB_CLIENT_ID";
-    static string clientSecret = "YOUR_GITHUB_CLIENT_SECRET";
+    static string clientId = "Iv23liIAUGDEbAGLQaRr";
+    static string clientSecret = "160d362af8c6bc12d9c50e8a2a7cfb443ad46abc";
     static string redirectUri = "http://localhost:5000/callback";
 
     static async Task Main()
@@ -42,17 +42,7 @@ class GitDev
                 case "dev":
                     if (string.IsNullOrEmpty(param))
                     {
-                        Console.WriteLine("Available commands:");
-                        Console.WriteLine("  dev init - Initialize a new repository");
-                        Console.WriteLine("  dev clone - Clone a repository");
-                        Console.WriteLine("  dev create-repo - Create a new GitHub repository");
-                        Console.WriteLine("  dev delete-repo - Delete a GitHub repository");
-                        Console.WriteLine("  dev branch - Create a branch");
-                        Console.WriteLine("  dev merge - Merge a branch");
-                        Console.WriteLine("  dev push - Push changes");
-                        Console.WriteLine("  dev pull - Pull changes");
-                        Console.WriteLine("  dev list - List branches");
-                        Console.WriteLine("  dev status - Show repository status");
+                        DisplayHelp();
                         break;
                     }
                     await ProcessGitCommand(param);
@@ -61,64 +51,108 @@ class GitDev
                     Console.WriteLine("Exiting GitDev.");
                     return;
                 default:
-                    Console.WriteLine("Unknown command.");
+                    Console.WriteLine("Unknown command. Type 'dev' for available commands.");
                     break;
             }
         }
     }
 
+    static void DisplayHelp()
+    {
+        Console.WriteLine("Available commands:");
+        Console.WriteLine("  dev init - Initialize a new repository");
+        Console.WriteLine("  dev clone - Clone a repository");
+        Console.WriteLine("  dev create-repo - Create a new GitHub repository");
+        Console.WriteLine("  dev delete-repo - Delete a GitHub repository");
+        Console.WriteLine("  dev branch - Create a branch");
+        Console.WriteLine("  dev merge - Merge a branch");
+        Console.WriteLine("  dev push - Push changes");
+        Console.WriteLine("  dev pull - Pull changes");
+        Console.WriteLine("  dev list - List branches");
+        Console.WriteLine("  dev status - Show repository status");
+    }
+
     static async Task AuthenticateUser()
     {
-        HttpListener listener = new HttpListener();
-        listener.Prefixes.Add("http://localhost:5000/");
-        listener.Start();
-
-        string authUrl = $"https://github.com/login/oauth/authorize?client_id={clientId}&redirect_uri={redirectUri}&scope=repo";
-        Console.WriteLine("Opening GitHub authentication page...");
-        Process.Start(new ProcessStartInfo
+        try
         {
-            FileName = authUrl,
-            UseShellExecute = true
-        });
+            HttpListener listener = new HttpListener();
+            listener.Prefixes.Add("http://localhost:5000/");
+            listener.Start();
 
-        Console.WriteLine("Waiting for authentication callback...");
-        var context = await listener.GetContextAsync();
-        var request = context.Request;
-        var response = context.Response;
+            string authUrl = $"https://github.com/login/oauth/authorize?client_id={clientId}&redirect_uri={redirectUri}&scope=repo";
+            Console.WriteLine("Opening GitHub authentication page...");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = authUrl,
+                UseShellExecute = true
+            });
 
-        string code = request.QueryString["code"];
-        response.StatusCode = 200;
-        byte[] buffer = Encoding.UTF8.GetBytes("Authentication successful! You can now close this window!");
-        response.OutputStream.Write(buffer, 0, buffer.Length);
-        response.OutputStream.Close();
-        listener.Stop();
+            Console.WriteLine("Waiting for authentication callback...");
+            var context = await listener.GetContextAsync();
+            var request = context.Request;
+            var response = context.Response;
 
-        string token = await ExchangeCodeForToken(code);
+            string code = request.QueryString["code"];
+            if (string.IsNullOrEmpty(code))
+            {
+                Console.WriteLine("Authentication failed. No authorization code received.");
+                return;
+            }
 
-        client = new GitHubClient(new ProductHeaderValue("GitDev"))
+            response.StatusCode = 200;
+            byte[] buffer = Encoding.UTF8.GetBytes("Authentication successful! You can now close this window!");
+            response.OutputStream.Write(buffer, 0, buffer.Length);
+            response.OutputStream.Close();
+            listener.Stop();
+
+            string token = await ExchangeCodeForToken(code);
+
+            client = new GitHubClient(new ProductHeaderValue("GitDev"))
+            {
+                Credentials = new Octokit.Credentials(token)
+            };
+
+            var user = await client.User.Current();
+            username = user.Login;
+            Console.WriteLine($"Authenticated as: {username}");
+        }
+        catch (Exception ex)
         {
-            Credentials = new Octokit.Credentials(token)
-        };
-
-        var user = await client.User.Current();
-        username = user.Login;
-        Console.WriteLine("Authenticated as: ", username);
+            Console.WriteLine($"Error during authentication: {ex.Message}");
+        }
     }
 
     static async Task<string> ExchangeCodeForToken(string code)
     {
-        using (var client = new WebClient())
+        using (var webClient = new WebClient())
         {
-            var values = new System.Collections.Specialized.NameValueCollection();
-            values["client_id"] = clientId;
-            values["client_secret"] = clientSecret;
-            values["code"] = code;
-            values["redirect_uri"] = redirectUri;
+            try
+            {
+                var values = new System.Collections.Specialized.NameValueCollection
+                {
+                    ["client_id"] = clientId,
+                    ["client_secret"] = clientSecret,
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri
+                };
 
-            var response = await client.UploadValuesTaskAsync("https://github.com/login/oauth/access_token", values);
-            string responseString = Encoding.UTF8.GetString(response);
-            string token = responseString.Split('&')[0].Split('=')[1];
-            return token;
+                var response = await webClient.UploadValuesTaskAsync("https://github.com/login/oauth/access_token", values);
+                string responseString = Encoding.UTF8.GetString(response);
+                if (!responseString.Contains("access_token"))
+                {
+                    Console.WriteLine("Error: Unable to retrieve access token.");
+                    return null;
+                }
+
+                string token = responseString.Split('&')[0].Split('=')[1];
+                return token;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error exchanging code for token: {ex.Message}");
+                return null;
+            }
         }
     }
 
@@ -126,59 +160,42 @@ class GitDev
     {
         string[] args = param.Split(new char[] { ' ' }, 2);
         string command = args[0].ToLower();
-        string option = args.Length > 1 ? args[1] : "";
 
         switch (command)
         {
             case "init":
                 Console.Write("Enter local repository path: ");
-                string repoPath = Console.ReadLine();
+                string repoPath = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                {
+                    Console.WriteLine("Invalid directory path.");
+                    return;
+                }
                 LibGit2Sharp.Repository.Init(repoPath);
                 Console.WriteLine("Initialized empty Git repository.");
                 break;
             case "create-repo":
                 Console.Write("Enter new repository name: ");
-                string repoName = Console.ReadLine();
+                string repoName = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(repoName))
+                {
+                    Console.WriteLine("Repository name cannot be empty.");
+                    return;
+                }
                 await CreateGitHubRepo(repoName);
                 break;
             case "delete-repo":
                 Console.Write("Enter repository name to delete: ");
-                string repoToDelete = Console.ReadLine();
+                string repoToDelete = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(repoToDelete))
+                {
+                    Console.WriteLine("Repository name cannot be empty.");
+                    return;
+                }
                 await DeleteGitHubRepo(repoToDelete);
                 break;
-            case "clone":
-                Console.Write("Enter GitHub repository URL: ");
-                string repoUrl = Console.ReadLine();
-                Console.Write("Enter local folder path: ");
-                string localPath = Console.ReadLine();
-                //CloneRepository(repoUrl, localPath);
-                break;
-            case "branch":
-                Console.Write("Enter branch name: ");
-                string branchName = Console.ReadLine();
-                CreateBranch(option, branchName);
-                break;
-            case "merge":
-                Console.Write("Enter branch name to merge: ");
-                string mergeBranch = Console.ReadLine();
-                //MergeBranch(option, mergeBranch);
-                break;
-            case "push":
-                Console.Write("Enter commit message: ");
-                string commitMsg = Console.ReadLine();
-                //PushChanges(option, commitMsg);
-                break;
-            case "pull":
-                //PullChanges(option);
-                break;
-            case "list":
-                ListBranches(option);
-                break;
-            case "status":
-                //ShowRepositoryStatus(option);
-                break;
             default:
-                Console.WriteLine("Invalid dev command.");
+                Console.WriteLine("Invalid dev command. Type 'dev' for a list of available commands.");
                 break;
         }
     }
