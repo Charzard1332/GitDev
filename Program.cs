@@ -10,16 +10,18 @@ using System.Diagnostics;
 using System.Threading;
 using NLog;
 using Xunit;
+using WebSocketSharp.Server;
+using WebSocketSharp;
 
 class GitDev
 {
-    private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+    private static readonly NLog.Logger logger = LogManager.GetCurrentClassLogger();
 
     static GitHubClient client;
     static string username;
 
-    static string clientId = "YOUR_GITHUB_CLIENT_ID";
-    static string clientSecret = "YOUR_GITHUB_CLIENT_SECRET";
+    static string clientId = "YOUR_CLIENT_ID";
+    static string clientSecret = "YOUR_CLIENT_SECRET";
     static string redirectUri = "http://localhost:5000/callback";
 
     static async Task Main()
@@ -35,6 +37,32 @@ class GitDev
             Console.Clear();
             Console.Title = $"GitDev Logged In - {username}";
             Console.Write($"@{username}/root: ");
+            Console.Write("Enter repo URL (.git): ");
+            string repoUrl = Console.ReadLine()?.Trim();
+            if (string.IsNullOrEmpty(repoUrl) || !repoUrl.EndsWith(".git"))
+            {
+                Console.WriteLine("Invalid repo URL. Please provide a valid .git URL");
+                return;
+            }
+            Console.Write("Enter local repo path to clone into: ");
+            string repoPath = Console.ReadLine()?.Trim();
+            if (string.IsNullOrEmpty(repoPath))
+            {
+                Console.WriteLine("Invalid repo path");
+                return;
+            }
+            try
+            {
+                Console.WriteLine("Cloning repo...");
+                LibGit2Sharp.Repository.Clone(repoUrl, repoPath);
+                Console.WriteLine("repo cloned successfully");
+            }
+            catch (Exception EX)
+            {
+                Console.WriteLine($"Failed to clone repo {EX.Message}");
+                return;
+            }
+            StartWebSocketServer(repoPath);
             string command = Console.ReadLine()?.Trim();
             if (string.IsNullOrEmpty(command)) continue;
 
@@ -77,6 +105,52 @@ class GitDev
         Console.WriteLine("  dev pull - Pull changes");
         Console.WriteLine("  dev list - List branches");
         Console.WriteLine("  dev status - Show repository status");
+    }
+
+    static void StartWebSocketServer(string repoPath)
+    {
+        WebSocketServer wss = new WebSocketServer("ws://localhost:5001");
+        wss.AddWebSocketService("/git-status", () => new GitStatusService(repoPath));
+        wss.Start();
+        Console.WriteLine("WebSocket server started at ws://localhost:5001/git-status");
+
+        // Start watching the repository for file changes
+        StartFileWatcher(repoPath);
+    }
+
+
+    static void StartFileWatcher(string repoPath)
+    {
+        FileSystemWatcher watcher = new FileSystemWatcher
+        {
+            Path = repoPath,
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
+            Filter = "*.",
+            EnableRaisingEvents = true
+        };
+
+        watcher.Changed += (sender, e) =>
+        {
+            Console.WriteLine($"File changed: {e.FullPath}");
+            BroadcastChange(e.FullPath);
+        };
+
+        watcher.Created += (sender, e) =>
+        {
+            Console.WriteLine($"File created: {e.FullPath}");
+            BroadcastChange(e.FullPath);
+        };
+
+        watcher.Deleted += (sender, e) =>
+        {
+            Console.WriteLine($"File deleted: {e.FullPath}");
+            BroadcastChange(e.FullPath);
+        };
+    }
+
+    static void BroadcastChange(string filePath)
+    {
+        Console.WriteLine($"Broadcasting change: {filePath}");
     }
 
     static async Task AuthenticateUser()
@@ -180,6 +254,38 @@ class GitDev
         {
             string token = await GitDev.ExchangeCodeForToken("invalid_code");
             Assert.Null(token);
+        }
+    }
+
+    class GitStatusService : WebSocketBehavior
+    {
+        private string repoPath;
+
+        public GitStatusService(string repoPath)
+        {
+            this.repoPath = repoPath;
+        }
+
+        public GitStatusService() { } // Parameterless constructor for WebSocketServer
+
+        protected override void OnMessage(MessageEventArgs e)
+        {
+            if (string.IsNullOrEmpty(repoPath))
+            {
+                Send("Error: Repository path is not set.");
+                return;
+            }
+
+            using (var repo = new LibGit2Sharp.Repository(repoPath))
+            {
+                var status = repo.RetrieveStatus();
+                Send($"Repo Status: {status}");
+            }
+        }
+
+        public void SetRepoPath(string path)
+        {
+            this.repoPath = path;
         }
     }
 
