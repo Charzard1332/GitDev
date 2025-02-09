@@ -7,6 +7,7 @@ using Octokit;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Threading;
+using Xunit;
 
 class GitDev
 {
@@ -153,6 +154,22 @@ class GitDev
                 Console.WriteLine($"Error exchanging code for token: {ex.Message}");
                 return null;
             }
+        }
+    }
+
+    public class GitDevTests
+    {
+        [Fact]
+        public async Task AuthenticateUser_ShouldHandleInvalidCode()
+        {
+            await Assert.ThrowsAsync<Exception>(async () => await GitDev.ExchangeCodeForToken("invalid_code"));
+        }
+
+        [Fact]
+        public async Task ExchangeCodeForToken_ShouldReturnNullForInvalidCode()
+        {
+            string token = await GitDev.ExchangeCodeForToken("invalid_code");
+            Assert.Null(token);
         }
     }
 
