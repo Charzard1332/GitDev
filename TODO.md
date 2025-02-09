@@ -7,7 +7,7 @@
 - [ ] Implement configuration file support for client credentials
 - [ ] Add support for managing repository collaborators
 - [ ] Create a detailed guide on using the tool with examples
-- [ ] Optimize performance for large repository operations
+- [x] Optimize performance for large repository operations
 - [x] Support additional Git commands like rebase and stash
 - [ ] Implement a CI/CD pipeline for automated testing and deployment
 - [ ] Improve documentation with visuals and diagrams
