@@ -7,10 +7,13 @@ using Octokit;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Threading;
+using NLog;
 using Xunit;
 
 class GitDev
 {
+    private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+
     static GitHubClient client;
     static string username;
 
@@ -99,6 +102,7 @@ class GitDev
             string code = request.QueryString["code"];
             if (string.IsNullOrEmpty(code))
             {
+                logger.Error("Authentication failed. No authorization code received.");
                 Console.WriteLine("Authentication failed. No authorization code received.");
                 return;
             }
@@ -122,6 +126,7 @@ class GitDev
         }
         catch (Exception ex)
         {
+            logger.Error($"Error during authentication: {ex.Message}");
             Console.WriteLine($"Error during authentication: {ex.Message}");
         }
     }
@@ -144,6 +149,7 @@ class GitDev
                 string responseString = Encoding.UTF8.GetString(response);
                 if (!responseString.Contains("access_token"))
                 {
+                    logger.Error("Error: Unable to retrieve access token."); // logging
                     Console.WriteLine("Error: Unable to retrieve access token.");
                     return null;
                 }
@@ -153,6 +159,7 @@ class GitDev
             }
             catch (Exception ex)
             {
+                logger.Error($"Error exchanging code for token: {ex.Message}"); // logging
                 Console.WriteLine($"Error exchanging code for token: {ex.Message}");
                 return null;
             }
@@ -187,6 +194,7 @@ class GitDev
                 string repoPath = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
                 {
+                    logger.Error("Invalid directory path"); // logging
                     Console.WriteLine("Invalid directory path.");
                     return;
                 }
@@ -208,6 +216,7 @@ class GitDev
                     Console.WriteLine("Branch name cannot be empty.");
                     return;
                 }
+                logger.Info($"Rebasing onto {rebaseBranch}"); // logging
                 Console.WriteLine($"Rebasing onto {rebaseBranch}...");
                 try
                 {
@@ -221,11 +230,13 @@ class GitDev
                         }
                         var signature = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
                         repo.Rebase.Start(repo.Head, branch, repo.Head, new Identity(username, "email@example.com"), new RebaseOptions());
+                        logger.Info($"Successfully rebased onto {rebaseBranch}"); // logging
                         Console.WriteLine($"Successfully rebased onto {rebaseBranch}.");
                     }
                 }
                 catch (Exception ex)
                 {
+                    logger.Error($"Rebase failed: {ex.Message}"); // logging
                     Console.WriteLine($"Rebase failed: {ex.Message}");
                 }
                 break;
@@ -237,17 +248,20 @@ class GitDev
                     Console.WriteLine("Invalid repository path.");
                     return;
                 }
+                logger.Info("Stashing changes..."); // logging
                 Console.WriteLine("Stashing changes...");
                 try
                 {
                     using (var repo = new LibGit2Sharp.Repository(repoPath))
                     {
                         var stashIndex = repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed Changes");
+                        logger.Info($"Changes stashed successfully with index {stashIndex}"); // logging
                         Console.WriteLine($"Changes stashed successfully with index {stashIndex}");
                     }
                 }
                 catch (Exception EX)
                 {
+                    logger.Error($"Stash failed: {EX.Message}"); // logging
                     Console.WriteLine($"Stash failed: {EX.Message}");
                 }
                 break;
@@ -256,6 +270,7 @@ class GitDev
                 string repoName = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(repoName))
                 {
+                    logger.Warn("Repository cannot be empty."); // logging
                     Console.WriteLine("Repository name cannot be empty.");
                     return;
                 }
@@ -266,6 +281,7 @@ class GitDev
                 string repoToDelete = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(repoToDelete))
                 {
+                    logger.Warn("Repository name cannot be empty."); // logging
                     Console.WriteLine("Repository name cannot be empty.");
                     return;
                 }
@@ -283,6 +299,7 @@ class GitDev
         {
             if (client == null || client.Credentials == null)
             {
+                logger.Error("Error: GitHub client is not authenticated. Ensure you have a valid OAuth token."); // logging
                 Console.WriteLine("Error: GitHub client is not authenticated. Ensure you have a valid OAuth token.");
                 return;
             }
@@ -294,12 +311,14 @@ class GitDev
         }
         catch (ForbiddenException ex)
         {
+            logger.Error("Error: Forbidden - Check if your token has 'repo' or 'public_repo' permissions."); // logging
             Console.WriteLine("Error: Forbidden - Check if your token has 'repo' or 'public_repo' permissions.");
             Console.WriteLine($"Exception: {ex.Message}");
             Thread.Sleep(5000);
         }
         catch (AuthorizationException ex)
         {
+            logger.Error("Error: Unauthorized - Your credentials might be incorrect or expired."); // logging
             Console.WriteLine("Error: Unauthorized - Your credentials might be incorrect or expired.");
             Console.WriteLine($"Exception: {ex.Message}");
             Thread.Sleep(5000);
