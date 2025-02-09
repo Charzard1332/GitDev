@@ -16,6 +16,8 @@ GitDev is a command-line tool that allows users to interact with GitHub reposito
 - 🌿 `dev branch <branch-name>` - Create a branch
 - 🔀 `dev merge <branch-name>` - Merge a branch
 - 📤 `dev push <commit-msg>` - Push changes
+- 🏗 `dev stash` - Stash changes
+- 🏗 `dev rebase` - Rebase branch
 - 📥 `dev pull` - Pull latest changes
 - 📜 `dev list` - List branches
 - 🔍 `dev status` - Shows repo status
