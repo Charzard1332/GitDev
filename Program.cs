@@ -13,8 +13,8 @@ class GitDev
     static GitHubClient client;
     static string username;
 
-    static string clientId = "Iv23liIAUGDEbAGLQaRr";
-    static string clientSecret = "160d362af8c6bc12d9c50e8a2a7cfb443ad46abc";
+    static string clientId = "YOUR_GITHUB_CLIENT_ID";
+    static string clientSecret = "YOUR_GITHUB_CLIENT_SECRET";
     static string redirectUri = "http://localhost:5000/callback";
 
     static async Task Main()
