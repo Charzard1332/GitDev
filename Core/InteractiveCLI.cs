@@ -108,6 +108,7 @@ namespace GitDev.Core
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("Other Commands:");
             Console.ResetColor();
+            Console.WriteLine("  dashboard             - View analytics dashboard");
             Console.WriteLine("  help                  - Show this help message");
             Console.WriteLine("  history               - Show command history");
             Console.WriteLine("  clear                 - Clear the screen");
