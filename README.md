@@ -1,34 +1,78 @@
-# 🚀 GitDev
+# 🚀 GitDev - Advanced
 
-GitDev is a command-line tool that allows users to interact with GitHub repositories using Octokit and LibGit2Sharp. It provides functionalities such as authentication, repository management, and Git operations from the terminal.
+GitDev is an advanced command-line tool that allows users to interact with GitHub repositories using Octokit and LibGit2Sharp. It features a modular architecture, multi-threading support, and an enhanced interactive CLI for improved developer experience.
 
 ## ✨ Features
-- 🔑 OAuth-based GitHub authentication
-- 📂 Create, delete, and clone repositories
-- 🌿 Branch management (create, merge, list branches)
-- ⚡ Git operations like push, pull, and status checks
-- 🔌 Plugin system for extending functionality
+
+### Core Functionality
+- 🔑 **OAuth-based GitHub authentication** with improved error handling
+- 📂 **Repository management** - Create, delete, clone, and list repositories
+- 🌿 **Branch management** - Create, merge, rebase, and list branches
+- ⚡ **Git operations** - Push, pull, stash, status checks with retry logic
+- 🔌 **Plugin system** - Extend functionality with custom plugins
+- 🎨 **Interactive CLI** - Color-coded interface with command history
+
+### Advanced Features
+- 🔄 **Multi-threading** - Concurrent Git operations with configurable thread pool
+- 📦 **Batch operations** - Execute multiple Git commands simultaneously
+- 🌐 **WebSocket server** - Real-time repository monitoring
+- ⚙️ **Configuration management** - Persistent settings and preferences
+- 📊 **Enhanced logging** - Structured logging with NLog
+- 🔒 **Thread-safe operations** - Semaphore-based concurrency control
+
+## 🏗️ Architecture
+
+GitDev uses a modular architecture with the following components:
+
+### Core Namespace Components
+- **AuthenticationManager** - Handles OAuth flow and GitHub authentication
+- **GitOperationsManager** - Manages Git operations with multi-threading support
+- **GitHubRepositoryManager** - Manages GitHub API operations
+- **InteractiveCLI** - Provides enhanced command-line interface
+- **WebSocketServerManager** - Real-time repository monitoring
+- **ConfigurationManager** - Application configuration persistence
 
 ## 📌 Commands
-- 🏗 `dev init` - Initialize a new repo
-- 📥 `dev clone <repo-url>` - Clone a repo
-- 🆕 `dev create-repo <repo-name>` - Create a new git repo
-- ❌ `dev delete-repo <repo-name>` - Delete a git repo
-- 🌿 `dev branch <branch-name>` - Create a branch
-- 🔀 `dev merge <branch-name>` - Merge a branch
-- 📤 `dev push <commit-msg>` - Push changes
-- 🏗 `dev stash` - Stash changes
-- 🏗 `dev rebase` - Rebase branch
-- 📥 `dev pull` - Pull latest changes
-- 📜 `dev list` - List branches
-- 🔍 `dev status` - Shows repo status
 
-### 🔌 Plugin Commands
-- 📋 `dev plugin-list` - List all loaded plugins
-- ℹ️ `dev plugin-info <id>` - Get plugin information
-- ▶️ `dev plugin-run <id>` - Execute a plugin
-- 📥 `dev plugin-load <path>` - Load a plugin from file
-- ❌ `dev plugin-unload <id>` - Unload a plugin
+### Repository Operations
+- `init` - Initialize a new Git repository
+- `clone <url> <path>` - Clone a repository
+- `create-repo <name> [private]` - Create a new GitHub repository
+- `delete-repo <name>` - Delete a GitHub repository
+- `list-repos` - List all your GitHub repositories
+
+### Branch Operations
+- `branch <name>` - Create a new branch
+- `list-branches [path]` - List all branches
+
+### Git Operations
+- `status [path]` - Show repository status
+- `push <path> <message>` - Commit and push changes
+- `pull <path>` - Pull latest changes
+- `stash <path> [message]` - Stash uncommitted changes
+- `rebase <path> <branch>` - Rebase onto a branch
+
+### Batch Operations
+- `batch-pull <paths...>` - Pull changes for multiple repos concurrently
+- `batch-push <paths...>` - Push changes for multiple repos concurrently
+
+### WebSocket Server
+- `start-ws [path]` - Start WebSocket server for real-time monitoring
+- `stop-ws` - Stop WebSocket server
+
+### Plugin Commands
+- `plugin-list` - List all loaded plugins
+- `plugin-info <id>` - Get information about a plugin
+- `plugin-run <id>` - Execute a plugin
+- `plugin-load <path>` - Load a plugin from a file
+- `plugin-unload <id>` - Unload a plugin
+
+### Utility Commands
+- `help` - Show all available commands
+- `history` - Show command history
+- `config` - Display current configuration
+- `clear` - Clear the screen
+- `exit` - Exit GitDev
 
 ## 🛠 Prerequisites
 - 🏗 .NET 6.0 or later

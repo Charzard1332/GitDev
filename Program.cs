@@ -1,682 +1,660 @@
-﻿using System;
+using System;
 using System.IO;
-using System.Net;
-using System.Text;
-using LibGit2Sharp;
-using LibGit2Sharp.Handlers;
-using Octokit;
 using System.Threading.Tasks;
-using System.Diagnostics;
-using System.Threading;
-using NLog;
-using Xunit;
-using WebSocketSharp.Server;
-using WebSocketSharp;
-using GitDev.Plugins;
 using System.Collections.Generic;
 using System.Linq;
+using NLog;
+using Xunit;
+using GitDev.Plugins;
+using GitDev.Core;
 
+/// <summary>
+/// Main application class for GitDev - Advanced Git and GitHub Management Tool.
+/// Refactored with modular architecture, multi-threading support, and enhanced features.
+/// </summary>
 class GitDev
 {
-    private static readonly NLog.Logger logger = LogManager.GetCurrentClassLogger();
+    private static readonly Logger logger = LogManager.GetCurrentClassLogger();
 
-    static GitHubClient client;
-    static string username;
-    static PluginManager pluginManager;
+    // Core managers
+    private static AuthenticationManager authManager;
+    private static GitOperationsManager gitOpsManager;
+    private static GitHubRepositoryManager githubRepoManager;
+    private static InteractiveCLI cli;
+    private static WebSocketServerManager wsManager;
+    private static ConfigurationManager configManager;
+    private static PluginManager pluginManager;
 
-    static string clientId = "Iv23liIAUGDEbAGLQaRr";
-    static string clientSecret = "YOUR_CLIENT_SECRET";
-    static string redirectUri = "http://localhost:5000/callback";
+    // Application state
+    private static string currentRepoPath;
+    private static bool isRunning = true;
+
+    // Configuration constants
+    private const string CLIENT_ID = "Iv23liIAUGDEbAGLQaRr";
+    private const string CLIENT_SECRET = "YOUR_CLIENT_SECRET";
+    private const string REDIRECT_URI = "http://localhost:5000/callback";
 
     static async Task Main()
     {
-        await AuthenticateUser();
-
-        // Initialize plugin system
-        string pluginDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plugins");
-        pluginManager = PluginManager.GetInstance(pluginDirectory, "1.0.0");
-        pluginManager.Initialize();
-
-        Console.Title = "GitDev Login";
-        Console.WriteLine($"Welcome, @{username}/root");
-        Console.Clear();
-
-        while (true)
-        {
-            Console.Clear();
-            Console.Title = $"GitDev Logged In - {username}";
-            Console.Write($"@{username}/root: ");
-            Console.Write("Enter repo URL (.git): ");
-            string repoUrl = Console.ReadLine()?.Trim();
-            if (string.IsNullOrEmpty(repoUrl) || !repoUrl.EndsWith(".git"))
-            {
-                Console.WriteLine("Invalid repo URL. Please provide a valid .git URL");
-                return;
-            }
-            Console.Write("Enter local repo path to clone into: ");
-            string repoPath = Console.ReadLine()?.Trim();
-            if (string.IsNullOrEmpty(repoPath))
-            {
-                Console.WriteLine("Invalid repo path");
-                return;
-            }
-            try
-            {
-                Console.WriteLine("Cloning repo...");
-                LibGit2Sharp.Repository.Clone(repoUrl, repoPath);
-                Console.WriteLine("repo cloned successfully");
-            }
-            catch (Exception EX)
-            {
-                Console.WriteLine($"Failed to clone repo {EX.Message}");
-                return;
-            }
-            StartWebSocketServer(repoPath);
-            string command = Console.ReadLine()?.Trim();
-            if (string.IsNullOrEmpty(command)) continue;
-
-            string[] args = command.Split(new char[] { ' ' }, 2);
-            string cmd = args[0].ToLower();
-            string param = args.Length > 1 ? args[1] : "";
-
-            switch (cmd)
-            {
-                case "dev":
-                    if (string.IsNullOrEmpty(param))
-                    {
-                        DisplayHelp();
-                        break;
-                    }
-                    await ProcessGitCommand(param);
-                    break;
-                case "exit":
-                    Console.WriteLine("Exiting GitDev.");
-                    if (pluginManager != null)
-                    {
-                        pluginManager.Shutdown();
-                    }
-                    return;
-                default:
-                    Console.WriteLine("Unknown command. Type 'dev' for available commands.");
-                    break;
-            }
-        }
-    }
-
-    static void DisplayHelp()
-    {
-        Console.WriteLine("Available commands:");
-        Console.WriteLine("  dev init - Initialize a new repository");
-        Console.WriteLine("  dev clone - Clone a repository");
-        Console.WriteLine("  dev create-repo - Create a new GitHub repository");
-        Console.WriteLine("  dev delete-repo - Delete a GitHub repository");
-        Console.WriteLine("  dev branch - Create a branch");
-        Console.WriteLine("  dev merge - Merge a branch");
-        Console.WriteLine("  dev push - Push changes");
-        Console.WriteLine("  dev stash - Stash changes");
-        Console.WriteLine("  dev rebase - Rebase branch");
-        Console.WriteLine("  dev pull - Pull changes");
-        Console.WriteLine("  dev list - List branches");
-        Console.WriteLine("  dev status - Show repository status");
-        Console.WriteLine("");
-        Console.WriteLine("Plugin commands:");
-        Console.WriteLine("  dev plugin-list - List all loaded plugins");
-        Console.WriteLine("  dev plugin-info <id> - Get information about a plugin");
-        Console.WriteLine("  dev plugin-run <id> [args] - Execute a plugin");
-        Console.WriteLine("  dev plugin-load <path> - Load a plugin from a file");
-        Console.WriteLine("  dev plugin-unload <id> - Unload a plugin");
-    }
-
-    static void StartWebSocketServer(string repoPath)
-    {
-        WebSocketServer wss = new WebSocketServer("ws://localhost:5001");
-        wss.AddWebSocketService("/git-status", () => new GitStatusService(repoPath));
-        wss.Start();
-        Console.WriteLine("WebSocket server started at ws://localhost:5001/git-status");
-
-        // Start watching the repository for file changes
-        StartFileWatcher(repoPath);
-    }
-
-
-    static void StartFileWatcher(string repoPath)
-    {
-        FileSystemWatcher watcher = new FileSystemWatcher
-        {
-            Path = repoPath,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
-            Filter = "*.",
-            EnableRaisingEvents = true
-        };
-
-        watcher.Changed += (sender, e) =>
-        {
-            Console.WriteLine($"File changed: {e.FullPath}");
-            BroadcastChange(e.FullPath);
-        };
-
-        watcher.Created += (sender, e) =>
-        {
-            Console.WriteLine($"File created: {e.FullPath}");
-            BroadcastChange(e.FullPath);
-        };
-
-        watcher.Deleted += (sender, e) =>
-        {
-            Console.WriteLine($"File deleted: {e.FullPath}");
-            BroadcastChange(e.FullPath);
-        };
-    }
-
-    static void BroadcastChange(string filePath)
-    {
-        Console.WriteLine($"Broadcasting change: {filePath}");
-    }
-
-    static async Task AuthenticateUser()
-    {
         try
         {
-            HttpListener listener = new HttpListener();
-            listener.Prefixes.Add("http://localhost:5000/");
-            listener.Start();
-
-            string authUrl = $"https://github.com/login/oauth/authorize?client_id={clientId}&redirect_uri={redirectUri}&scope=repo";
-            Console.WriteLine("Opening GitHub authentication page...");
-            Process.Start(new ProcessStartInfo
+            logger.Info("GitDev application starting");
+            
+            // Initialize configuration manager
+            configManager = new ConfigurationManager();
+            
+            // Initialize CLI
+            cli = new InteractiveCLI();
+            
+            // Authenticate user
+            if (!await AuthenticateUserAsync())
             {
-                FileName = authUrl,
-                UseShellExecute = true
-            });
-
-            Console.WriteLine("Waiting for authentication callback...");
-            var context = await listener.GetContextAsync();
-            var request = context.Request;
-            var response = context.Response;
-
-            string code = request.QueryString["code"];
-            if (string.IsNullOrEmpty(code))
-            {
-                logger.Error("Authentication failed. No authorization code received.");
-                Console.WriteLine("Authentication failed. No authorization code received.");
-                response.StatusCode = 400;
-                byte[] errorBuffer = Encoding.UTF8.GetBytes("<html><body><h2>Authentication Failed</h2><p>No authorization code received.</p></body></html>");
-                response.OutputStream.Write(errorBuffer, 0, errorBuffer.Length);
-                response.OutputStream.Close();
+                cli.DisplayError("Authentication failed. Exiting application.");
                 return;
             }
 
-            response.StatusCode = 200;
-            string successHtml = @"
-            <html>
-            <head>
-                <title>GitDev Authentication</title>
-                <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f4; }
-                    .container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 10px 0px #aaa; display: inline-block; }
-                    h2 { color: #333; }
-                    p { font-size: 18px; }
-                    .success { color: green; font-weight: bold; }
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <h2>Authentication Successful!</h2>
-                    <p class='success'>You can now close this window and return to GitDev.</p>
-                </div>
-            </body>
-            </html>";
+            // Initialize managers with authenticated user context
+            int maxConcurrentOps = configManager.GetValue("MaxConcurrentOperations", 3);
+            gitOpsManager = new GitOperationsManager(authManager.Username, null, maxConcurrentOps);
+            githubRepoManager = new GitHubRepositoryManager(authManager.Client, authManager.Username);
 
-            byte[] buffer = Encoding.UTF8.GetBytes(successHtml);
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-            response.OutputStream.Close();
-            listener.Stop();
+            // Initialize plugin system
+            await InitializePluginSystemAsync();
 
-            string token = await ExchangeCodeForToken(code);
+            // Display welcome message
+            Console.Title = $"GitDev - {authManager.Username}";
+            cli.DisplayWelcome(authManager.Username);
 
-            client = new GitHubClient(new ProductHeaderValue("GitDev"))
-            {
-                Credentials = new Octokit.Credentials(token)
-            };
+            // Start main application loop
+            await RunApplicationLoopAsync();
 
-            var user = await client.User.Current();
-            username = user.Login;
-            Console.WriteLine($"Authenticated as: {username}");
+            // Cleanup
+            await ShutdownAsync();
         }
         catch (Exception ex)
         {
-            logger.Error($"Error during authentication: {ex.Message}");
-            Console.WriteLine($"Error during authentication: {ex.Message}");
+            logger.Fatal(ex, "Fatal error in application");
+            Console.WriteLine($"Fatal error: {ex.Message}");
         }
     }
 
-
-    static async Task<string> ExchangeCodeForToken(string code)
+    /// <summary>
+    /// Authenticate user with GitHub OAuth.
+    /// </summary>
+    private static async Task<bool> AuthenticateUserAsync()
     {
-        using (var webClient = new WebClient())
+        try
+        {
+            logger.Info("Starting user authentication");
+            
+            authManager = new AuthenticationManager(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+            bool success = await authManager.AuthenticateAsync();
+            
+            if (success)
+            {
+                logger.Info($"User authenticated successfully: {authManager.Username}");
+            }
+            
+            return success;
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Authentication error");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Initialize the plugin system.
+    /// </summary>
+    private static async Task InitializePluginSystemAsync()
+    {
+        try
+        {
+            logger.Info("Initializing plugin system");
+            
+            string pluginDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plugins");
+            pluginManager = PluginManager.GetInstance(pluginDirectory, "1.0.0");
+            
+            await Task.Run(() => pluginManager.Initialize());
+            
+            var plugins = pluginManager.ListPlugins();
+            logger.Info($"Plugin system initialized with {plugins.Count} plugins");
+            
+            if (plugins.Count > 0)
+            {
+                cli.DisplayInfo($"Loaded {plugins.Count} plugin(s)");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to initialize plugin system");
+            cli.DisplayWarning("Plugin system initialization failed");
+        }
+    }
+
+    /// <summary>
+    /// Main application loop for processing user commands.
+    /// </summary>
+    private static async Task RunApplicationLoopAsync()
+    {
+        while (isRunning)
         {
             try
             {
-                var values = new System.Collections.Specialized.NameValueCollection
+                string command = cli.ReadCommand(authManager.Username, currentRepoPath ?? "root");
+                
+                if (string.IsNullOrEmpty(command))
                 {
-                    ["client_id"] = clientId,
-                    ["client_secret"] = clientSecret,
-                    ["code"] = code,
-                    ["redirect_uri"] = redirectUri
-                };
-
-                var response = await webClient.UploadValuesTaskAsync("https://github.com/login/oauth/access_token", values);
-                string responseString = Encoding.UTF8.GetString(response);
-                if (!responseString.Contains("access_token"))
-                {
-                    logger.Error("Error: Unable to retrieve access token."); // logging
-                    Console.WriteLine("Error: Unable to retrieve access token.");
-                    return null;
+                    continue;
                 }
 
-                string token = responseString.Split('&')[0].Split('=')[1];
-                return token;
+                var (cmd, args) = cli.ParseCommand(command);
+                await ProcessCommandAsync(cmd, args);
             }
             catch (Exception ex)
             {
-                logger.Error($"Error exchanging code for token: {ex.Message}"); // logging
-                Console.WriteLine($"Error exchanging code for token: {ex.Message}");
-                return null;
+                logger.Error(ex, "Error processing command");
+                cli.DisplayError($"Command error: {ex.Message}");
             }
         }
     }
 
-    public class GitDevTests
+    /// <summary>
+    /// Process user commands with improved command handling.
+    /// </summary>
+    private static async Task ProcessCommandAsync(string command, List<string> args)
     {
-        [Fact]
-        public async Task AuthenticateUser_ShouldHandleInvalidCode()
-        {
-            await Assert.ThrowsAsync<Exception>(async () => await GitDev.ExchangeCodeForToken("invalid_code"));
-        }
-
-        [Fact]
-        public async Task ExchangeCodeForToken_ShouldReturnNullForInvalidCode()
-        {
-            string token = await GitDev.ExchangeCodeForToken("invalid_code");
-            Assert.Null(token);
-        }
-    }
-
-    class GitStatusService : WebSocketBehavior
-    {
-        private string repoPath;
-
-        public GitStatusService(string repoPath)
-        {
-            this.repoPath = repoPath;
-        }
-
-        public GitStatusService() { } // Parameterless constructor for WebSocketServer
-
-        protected override void OnMessage(MessageEventArgs e)
-        {
-            if (string.IsNullOrEmpty(repoPath))
-            {
-                Send("Error: Repository path is not set.");
-                return;
-            }
-
-            using (var repo = new LibGit2Sharp.Repository(repoPath))
-            {
-                var status = repo.RetrieveStatus();
-                Send($"Repo Status: {status}");
-            }
-        }
-
-        public void SetRepoPath(string path)
-        {
-            this.repoPath = path;
-        }
-    }
-
-    static async Task ProcessGitCommand(string param)
-    {
-        string[] args = param.Split(new char[] { ' ' }, 2);
-        string command = args[0].ToLower();
+        logger.Debug($"Processing command: {command}");
 
         switch (command)
         {
+            case "help":
+                cli.DisplayHelp();
+                break;
+
+            case "history":
+                cli.DisplayHistory();
+                break;
+
+            case "clear":
+                Console.Clear();
+                cli.DisplayWelcome(authManager.Username);
+                break;
+
+            case "config":
+                configManager.DisplayConfiguration();
+                break;
+
+            case "exit":
+            case "quit":
+                isRunning = false;
+                break;
+
+            // Repository operations
             case "init":
-                Console.Write("Enter local repository path: ");
-                string repoPath = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
-                {
-                    logger.Error("Invalid directory path"); // logging
-                    Console.WriteLine("Invalid directory path.");
-                    return;
-                }
-                LibGit2Sharp.Repository.Init(repoPath);
-                Console.WriteLine("Initialized empty Git repository.");
+                await HandleInitCommandAsync(args);
                 break;
-            case "rebase":
-                Console.Write("Enter local repository path: ");
-                repoPath = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
-                {
-                    Console.WriteLine("Invalid repository path.");
-                    return;
-                }
-                Console.Write("Enter branch to rebase onto: ");
-                string rebaseBranch = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(rebaseBranch))
-                {
-                    Console.WriteLine("Branch name cannot be empty.");
-                    return;
-                }
-                logger.Info($"Rebasing onto {rebaseBranch}"); // logging
-                Console.WriteLine($"Rebasing onto {rebaseBranch}...");
-                try
-                {
-                    using (var repo = new LibGit2Sharp.Repository(repoPath))
-                    {
-                        var branch = repo.Branches[rebaseBranch];
-                        if (branch == null)
-                        {
-                            Console.WriteLine("Branch not found.");
-                            return;
-                        }
-                        var signature = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
-                        var rebaseOptions = new RebaseOptions
-                        {
-                            FileConflictStrategy = CheckoutFileConflictStrategy.Merge
-                        };
-                        repo.Rebase.Start(repo.Head, branch, repo.Head, new Identity(username, "email@example.com"), rebaseOptions);
-                        logger.Info($"Successfully rebased onto {rebaseBranch}"); // logging
-                        Console.WriteLine($"Successfully rebased onto {rebaseBranch}.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.Error($"Rebase failed: {ex.Message}"); // logging
-                    Console.WriteLine($"Rebase failed: {ex.Message}");
-                }
+
+            case "clone":
+                await HandleCloneCommandAsync(args);
                 break;
-            case "stash":
-                Console.Write("Enter local repository path: ");
-                repoPath = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
-                {
-                    Console.WriteLine("Invalid repository path.");
-                    return;
-                }
-                logger.Info("Stashing changes..."); // logging
-                Console.WriteLine("Stashing changes...");
-                try
-                {
-                    using (var repo = new LibGit2Sharp.Repository(repoPath))
-                    {
-                        var stashIndex = repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed changes");
-                        repo.Stashes.Add(new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now), "Stashed changes");
-                        logger.Info($"Changes stashed successfully with index {stashIndex}"); // logging
-                        Console.WriteLine($"Changes stashed successfully with index {stashIndex}");
-                    }
-                }
-                catch (Exception EX)
-                {
-                    logger.Error($"Stash failed: {EX.Message}"); // logging
-                    Console.WriteLine($"Stash failed: {EX.Message}");
-                }
-                break;
+
             case "create-repo":
-                Console.Write("Enter new repository name: ");
-                string repoName = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(repoName))
-                {
-                    logger.Warn("Repository cannot be empty."); // logging
-                    Console.WriteLine("Repository name cannot be empty.");
-                    return;
-                }
-                await CreateGitHubRepo(repoName);
+                await HandleCreateRepoCommandAsync(args);
                 break;
+
             case "delete-repo":
-                Console.Write("Enter repository name to delete: ");
-                string repoToDelete = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(repoToDelete))
-                {
-                    logger.Warn("Repository name cannot be empty."); // logging
-                    Console.WriteLine("Repository name cannot be empty.");
-                    return;
-                }
-                await DeleteGitHubRepo(repoToDelete);
+                await HandleDeleteRepoCommandAsync(args);
                 break;
+
+            case "list-repos":
+                await HandleListReposCommandAsync();
+                break;
+
+            // Branch operations
+            case "branch":
+                await HandleBranchCommandAsync(args);
+                break;
+
+            case "list-branches":
+                await HandleListBranchesCommandAsync(args);
+                break;
+
+            // Git operations
+            case "status":
+                await HandleStatusCommandAsync(args);
+                break;
+
+            case "push":
+                await HandlePushCommandAsync(args);
+                break;
+
+            case "pull":
+                await HandlePullCommandAsync(args);
+                break;
+
+            case "stash":
+                await HandleStashCommandAsync(args);
+                break;
+
+            case "rebase":
+                await HandleRebaseCommandAsync(args);
+                break;
+
+            // Batch operations
+            case "batch-pull":
+                await HandleBatchPullCommandAsync(args);
+                break;
+
+            case "batch-push":
+                await HandleBatchPushCommandAsync(args);
+                break;
+
+            // WebSocket server
+            case "start-ws":
+                await HandleStartWebSocketCommandAsync(args);
+                break;
+
+            case "stop-ws":
+                HandleStopWebSocketCommand();
+                break;
+
+            // Plugin operations
             case "plugin-list":
-                ListPlugins();
+                HandlePluginListCommand();
                 break;
+
             case "plugin-info":
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: dev plugin-info <plugin-id>");
-                    return;
-                }
-                ShowPluginInfo(args[1]);
+                HandlePluginInfoCommand(args);
                 break;
+
             case "plugin-run":
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: dev plugin-run <plugin-id> [args]");
-                    return;
-                }
-                await RunPlugin(args[1]);
+                await HandlePluginRunCommandAsync(args);
                 break;
+
             case "plugin-load":
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: dev plugin-load <plugin-path>");
-                    return;
-                }
-                LoadPlugin(args[1]);
+                HandlePluginLoadCommand(args);
                 break;
+
             case "plugin-unload":
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: dev plugin-unload <plugin-id>");
-                    return;
-                }
-                UnloadPlugin(args[1]);
+                HandlePluginUnloadCommand(args);
                 break;
+
             default:
-                Console.WriteLine("Invalid dev command. Type 'dev' for a list of available commands.");
+                cli.DisplayWarning($"Unknown command: {command}");
+                cli.DisplayInfo("Type 'help' for available commands");
                 break;
         }
     }
 
-    static async Task CreateGitHubRepo(string repoName)
+    // ==================== Command Handlers ====================
+
+    private static async Task HandleInitCommandAsync(List<string> args)
     {
-        try
+        string repoPath = args.Count > 0 ? args[0] : PromptForInput("Enter local repository path");
+        
+        if (gitOpsManager.InitRepository(repoPath))
         {
-            if (client == null || client.Credentials == null)
+            cli.DisplaySuccess($"Repository initialized at {repoPath}");
+            currentRepoPath = repoPath;
+        }
+        else
+        {
+            cli.DisplayError("Failed to initialize repository");
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandleCloneCommandAsync(List<string> args)
+    {
+        string repoUrl = args.Count > 0 ? args[0] : PromptForInput("Enter repository URL");
+        string localPath = args.Count > 1 ? args[1] : PromptForInput("Enter local path");
+        
+        cli.DisplayInfo($"Cloning {repoUrl}...");
+        
+        if (await gitOpsManager.CloneRepositoryAsync(repoUrl, localPath))
+        {
+            cli.DisplaySuccess($"Repository cloned to {localPath}");
+            currentRepoPath = localPath;
+        }
+        else
+        {
+            cli.DisplayError("Failed to clone repository");
+        }
+    }
+
+    private static async Task HandleCreateRepoCommandAsync(List<string> args)
+    {
+        string repoName = args.Count > 0 ? args[0] : PromptForInput("Enter repository name");
+        bool isPrivate = args.Count > 1 && args[1].ToLower() == "private";
+        
+        if (await githubRepoManager.CreateRepositoryAsync(repoName, isPrivate))
+        {
+            cli.DisplaySuccess($"Repository '{repoName}' created successfully");
+        }
+        else
+        {
+            cli.DisplayError("Failed to create repository");
+        }
+    }
+
+    private static async Task HandleDeleteRepoCommandAsync(List<string> args)
+    {
+        string repoName = args.Count > 0 ? args[0] : PromptForInput("Enter repository name to delete");
+        
+        if (cli.PromptConfirmation($"Are you sure you want to delete '{repoName}'?"))
+        {
+            if (await githubRepoManager.DeleteRepositoryAsync(repoName))
             {
-                logger.Error("Error: GitHub client is not authenticated. Ensure you have a valid OAuth token."); // logging
-                Console.WriteLine("Error: GitHub client is not authenticated. Ensure you have a valid OAuth token.");
-                return;
+                cli.DisplaySuccess($"Repository '{repoName}' deleted successfully");
             }
-
-            var newRepo = new NewRepository(repoName) { Private = false };
-            var repo = await client.Repository.Create(newRepo);
-            Console.WriteLine($"Repo created: {repo.HtmlUrl}");
-            Thread.Sleep(5000); // 5sec sleep to show msg
-        }
-        catch (ForbiddenException ex)
-        {
-            logger.Error("Error: Forbidden - Check if your token has 'repo' or 'public_repo' permissions."); // logging
-            Console.WriteLine("Error: Forbidden - Check if your token has 'repo' or 'public_repo' permissions.");
-            Console.WriteLine($"Exception: {ex.Message}");
-            Thread.Sleep(5000);
-        }
-        catch (AuthorizationException ex)
-        {
-            logger.Error("Error: Unauthorized - Your credentials might be incorrect or expired."); // logging
-            Console.WriteLine("Error: Unauthorized - Your credentials might be incorrect or expired.");
-            Console.WriteLine($"Exception: {ex.Message}");
-            Thread.Sleep(5000);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Unexpected error: {ex.Message}");
-        }
-    }
-
-
-    static async Task DeleteGitHubRepo(string repoName)
-    {
-        await client.Repository.Delete(username, repoName);
-        Console.WriteLine("Repository deleted successfully.");
-        Thread.Sleep(5000);
-    }
-
-    static void CloneRepository(string repoUrl, string localPath, string username, string token)
-    {
-        var options = new CloneOptions();
-        options.FetchOptions.CredentialsProvider = (_url, _user, _cred) =>
-            new UsernamePasswordCredentials { Username = username, Password = token };
-
-        LibGit2Sharp.Repository.Clone(repoUrl, localPath, options);
-        Console.WriteLine("Repository cloned successfully.");
-    }
-
-    static void CreateBranch(string repoPath, string branchName)
-    {
-        using (var repo = new LibGit2Sharp.Repository(repoPath))
-        {
-            repo.CreateBranch(branchName);
-            Console.WriteLine($"Branch '{branchName}' created successfully.");
-        }
-    }
-
-    static void PushChanges(string repoPath, string commitMessage, string username, string token)
-    {
-        using (var repo = new LibGit2Sharp.Repository(repoPath))
-        {
-            Commands.Stage(repo, "*");
-            var author = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
-            var committer = author;
-            repo.Commit(commitMessage, author, committer);
-
-            var remote = repo.Network.Remotes["origin"];
-            var options = new PushOptions();
-            options.CredentialsProvider = (_url, _user, _cred) => new UsernamePasswordCredentials { Username = username, Password = token };
-            repo.Network.Push(remote, repo.Head.CanonicalName, options);
-
-            Console.WriteLine("Changes pushed successfully.");
-        }
-    }
-
-    static void PullChanges(string repoPath, string username, string token)
-    {
-        using (var repo = new LibGit2Sharp.Repository(repoPath))
-        {
-            var remote = repo.Network.Remotes["origin"];
-            var credentials = new UsernamePasswordCredentials { Username = username, Password = token };
-            var options = new PullOptions();
-            options.FetchOptions.CredentialsProvider = (_url, _user, _cred) => credentials;
-
-            var signature = new LibGit2Sharp.Signature(username, "email@example.com", DateTime.Now);
-            Commands.Pull(repo, signature, options);
-
-            Console.WriteLine("Repository updated successfully.");
-        }
-    }
-
-    static void ListBranches(string repoPath)
-    {
-        using (var repo = new LibGit2Sharp.Repository(repoPath))
-        {
-            foreach (var branch in repo.Branches)
+            else
             {
-                Console.WriteLine(branch.FriendlyName);
+                cli.DisplayError("Failed to delete repository");
             }
         }
+        else
+        {
+            cli.DisplayInfo("Delete operation cancelled");
+        }
     }
 
-    static void ListPlugins()
+    private static async Task HandleListReposCommandAsync()
+    {
+        cli.DisplayInfo("Fetching repositories...");
+        var repos = await githubRepoManager.ListRepositoriesAsync();
+        
+        if (repos.Count > 0)
+        {
+            cli.DisplayInfo($"Found {repos.Count} repositories");
+        }
+        else
+        {
+            cli.DisplayWarning("No repositories found");
+        }
+    }
+
+    private static async Task HandleBranchCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        string branchName = args.Count > 1 ? args[1] : (args.Count > 0 ? args[0] : PromptForInput("Enter branch name"));
+        
+        if (gitOpsManager.CreateBranch(repoPath, branchName))
+        {
+            cli.DisplaySuccess($"Branch '{branchName}' created");
+        }
+        else
+        {
+            cli.DisplayError("Failed to create branch");
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandleListBranchesCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        
+        cli.DisplayInfo("Branches:");
+        gitOpsManager.ListBranches(repoPath);
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandleStatusCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        
+        string status = gitOpsManager.GetRepositoryStatus(repoPath);
+        cli.DisplayInfo($"Status: {status}");
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandlePushCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        string message = args.Count > 1 ? string.Join(" ", args.Skip(1)) : PromptForInput("Enter commit message");
+        
+        cli.DisplayInfo("Pushing changes...");
+        
+        if (await gitOpsManager.PushChangesAsync(repoPath, message))
+        {
+            cli.DisplaySuccess("Changes pushed successfully");
+        }
+        else
+        {
+            cli.DisplayError("Failed to push changes");
+        }
+    }
+
+    private static async Task HandlePullCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        
+        cli.DisplayInfo("Pulling changes...");
+        
+        if (await gitOpsManager.PullChangesAsync(repoPath))
+        {
+            cli.DisplaySuccess("Changes pulled successfully");
+        }
+        else
+        {
+            cli.DisplayError("Failed to pull changes");
+        }
+    }
+
+    private static async Task HandleStashCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        string message = args.Count > 1 ? string.Join(" ", args.Skip(1)) : "Stashed changes";
+        
+        if (gitOpsManager.StashChanges(repoPath, message))
+        {
+            cli.DisplaySuccess("Changes stashed successfully");
+        }
+        else
+        {
+            cli.DisplayError("Failed to stash changes");
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandleRebaseCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        string branchName = args.Count > 1 ? args[1] : (args.Count > 0 ? args[0] : PromptForInput("Enter branch to rebase onto"));
+        
+        cli.DisplayInfo($"Rebasing onto {branchName}...");
+        
+        if (gitOpsManager.RebaseOnto(repoPath, branchName))
+        {
+            cli.DisplaySuccess("Rebase completed successfully");
+        }
+        else
+        {
+            cli.DisplayError("Rebase failed");
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    private static async Task HandleBatchPullCommandAsync(List<string> args)
+    {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Please provide at least one repository path");
+            return;
+        }
+
+        cli.DisplayInfo($"Starting batch pull for {args.Count} repositories...");
+        
+        var operations = args.Select(path => ("pull", path, new Dictionary<string, string>())).ToList();
+        var results = await gitOpsManager.ExecuteBatchOperationsAsync(operations);
+        
+        int successCount = results.Count(r => r.Value);
+        cli.DisplayInfo($"Batch pull completed: {successCount}/{results.Count} successful");
+    }
+
+    private static async Task HandleBatchPushCommandAsync(List<string> args)
+    {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Please provide at least one repository path");
+            return;
+        }
+
+        string message = PromptForInput("Enter commit message for all repositories");
+        
+        cli.DisplayInfo($"Starting batch push for {args.Count} repositories...");
+        
+        var operations = args.Select(path => 
+            ("push", path, new Dictionary<string, string> { { "message", message } })
+        ).ToList();
+        
+        var results = await gitOpsManager.ExecuteBatchOperationsAsync(operations);
+        
+        int successCount = results.Count(r => r.Value);
+        cli.DisplayInfo($"Batch push completed: {successCount}/{results.Count} successful");
+    }
+
+    private static async Task HandleStartWebSocketCommandAsync(List<string> args)
+    {
+        string repoPath = currentRepoPath ?? (args.Count > 0 ? args[0] : PromptForInput("Enter repository path"));
+        
+        if (wsManager == null)
+        {
+            int port = configManager.GetValue("WebSocketPort", 5001);
+            wsManager = new WebSocketServerManager(port);
+        }
+        
+        wsManager.Start(repoPath);
+        cli.DisplaySuccess("WebSocket server started");
+        
+        await Task.CompletedTask;
+    }
+
+    private static void HandleStopWebSocketCommand()
+    {
+        if (wsManager != null && wsManager.IsRunning)
+        {
+            wsManager.Stop();
+            cli.DisplaySuccess("WebSocket server stopped");
+        }
+        else
+        {
+            cli.DisplayWarning("WebSocket server is not running");
+        }
+    }
+
+    private static void HandlePluginListCommand()
     {
         try
         {
             var plugins = pluginManager.ListPlugins();
+            
             if (plugins.Count == 0)
             {
-                Console.WriteLine("No plugins loaded.");
+                cli.DisplayInfo("No plugins loaded");
                 return;
             }
 
-            Console.WriteLine($"\nLoaded Plugins ({plugins.Count}):");
-            Console.WriteLine("".PadRight(60, '-'));
+            Console.WriteLine();
+            cli.DisplayInfo($"Loaded Plugins ({plugins.Count}):");
+            cli.DisplaySeparator();
+            
             foreach (var plugin in plugins)
             {
-                Console.WriteLine($"ID:          {plugin.Id}");
-                Console.WriteLine($"Name:        {plugin.Name}");
-                Console.WriteLine($"Version:     {plugin.Version}");
-                Console.WriteLine($"Author:      {plugin.Author}");
-                Console.WriteLine($"Description: {plugin.Description}");
-                Console.WriteLine("".PadRight(60, '-'));
+                Console.WriteLine($"  ID:          {plugin.Id}");
+                Console.WriteLine($"  Name:        {plugin.Name}");
+                Console.WriteLine($"  Version:     {plugin.Version}");
+                Console.WriteLine($"  Author:      {plugin.Author}");
+                Console.WriteLine($"  Description: {plugin.Description}");
+                cli.DisplaySeparator();
             }
         }
         catch (Exception ex)
         {
-            logger.Error($"Error listing plugins: {ex.Message}");
-            Console.WriteLine($"Error listing plugins: {ex.Message}");
+            logger.Error(ex, "Error listing plugins");
+            cli.DisplayError($"Failed to list plugins: {ex.Message}");
         }
     }
 
-    static void ShowPluginInfo(string pluginId)
+    private static void HandlePluginInfoCommand(List<string> args)
     {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Usage: plugin-info <plugin-id>");
+            return;
+        }
+
         try
         {
+            string pluginId = args[0];
             var plugin = pluginManager.GetPlugin(pluginId);
+            
             if (plugin == null)
             {
-                Console.WriteLine($"Plugin not found: {pluginId}");
+                cli.DisplayError($"Plugin not found: {pluginId}");
                 return;
             }
 
             var metadata = plugin.Metadata;
-            Console.WriteLine("\nPlugin Information:");
-            Console.WriteLine("".PadRight(60, '='));
-            Console.WriteLine($"ID:               {metadata.Id}");
-            Console.WriteLine($"Name:             {metadata.Name}");
-            Console.WriteLine($"Version:          {metadata.Version}");
-            Console.WriteLine($"Author:           {metadata.Author}");
-            Console.WriteLine($"Description:      {metadata.Description}");
-            Console.WriteLine($"Min Host Version: {metadata.MinimumHostVersion}");
+            Console.WriteLine();
+            cli.DisplayInfo("Plugin Information:");
+            Console.WriteLine($"  ID:               {metadata.Id}");
+            Console.WriteLine($"  Name:             {metadata.Name}");
+            Console.WriteLine($"  Version:          {metadata.Version}");
+            Console.WriteLine($"  Author:           {metadata.Author}");
+            Console.WriteLine($"  Description:      {metadata.Description}");
+            Console.WriteLine($"  Min Host Version: {metadata.MinimumHostVersion}");
+            
             if (metadata.Dependencies != null && metadata.Dependencies.Length > 0)
             {
-                Console.WriteLine($"Dependencies:     {string.Join(", ", metadata.Dependencies)}");
+                Console.WriteLine($"  Dependencies:     {string.Join(", ", metadata.Dependencies)}");
             }
-            Console.WriteLine("".PadRight(60, '='));
+            
+            Console.WriteLine();
         }
         catch (Exception ex)
         {
-            logger.Error($"Error showing plugin info: {ex.Message}");
-            Console.WriteLine($"Error showing plugin info: {ex.Message}");
+            logger.Error(ex, "Error showing plugin info");
+            cli.DisplayError($"Failed to show plugin info: {ex.Message}");
         }
     }
 
-    static async Task RunPlugin(string pluginId)
+    private static async Task HandlePluginRunCommandAsync(List<string> args)
     {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Usage: plugin-run <plugin-id> [args]");
+            return;
+        }
+
         try
         {
-            Console.WriteLine($"\nExecuting plugin: {pluginId}...");
+            string pluginId = args[0];
+            cli.DisplayInfo($"Executing plugin: {pluginId}...");
             
-            // For this example, we'll pass some default arguments
-            var args = new Dictionary<string, object>
+            var pluginArgs = new Dictionary<string, object>
             {
-                { "name", username ?? "User" }
+                { "name", authManager.Username }
             };
 
-            var result = pluginManager.ExecutePlugin(pluginId, args);
+            var result = await Task.Run(() => pluginManager.ExecutePlugin(pluginId, pluginArgs));
             
             if (result.Success)
             {
-                Console.WriteLine($"✓ Plugin executed successfully!");
+                cli.DisplaySuccess("Plugin executed successfully!");
+                
                 if (!string.IsNullOrEmpty(result.Message))
                 {
                     Console.WriteLine($"  Message: {result.Message}");
                 }
+                
                 if (result.Data != null)
                 {
                     Console.WriteLine($"  Data: {result.Data}");
@@ -684,60 +662,132 @@ class GitDev
             }
             else
             {
-                Console.WriteLine($"✗ Plugin execution failed!");
+                cli.DisplayError("Plugin execution failed!");
                 Console.WriteLine($"  Error: {result.Message}");
             }
         }
         catch (Exception ex)
         {
-            logger.Error($"Error running plugin: {ex.Message}");
-            Console.WriteLine($"Error running plugin: {ex.Message}");
+            logger.Error(ex, "Error running plugin");
+            cli.DisplayError($"Failed to run plugin: {ex.Message}");
         }
-        
-        await Task.CompletedTask;
     }
 
-    static void LoadPlugin(string pluginPath)
+    private static void HandlePluginLoadCommand(List<string> args)
     {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Usage: plugin-load <plugin-path>");
+            return;
+        }
+
         try
         {
-            Console.WriteLine($"\nLoading plugin from: {pluginPath}...");
+            string pluginPath = args[0];
+            cli.DisplayInfo($"Loading plugin from: {pluginPath}...");
             
             if (pluginManager.LoadPlugin(pluginPath))
             {
-                Console.WriteLine("✓ Plugin loaded successfully!");
+                cli.DisplaySuccess("Plugin loaded successfully!");
             }
             else
             {
-                Console.WriteLine("✗ Failed to load plugin. Check logs for details.");
+                cli.DisplayError("Failed to load plugin. Check logs for details.");
             }
         }
         catch (Exception ex)
         {
-            logger.Error($"Error loading plugin: {ex.Message}");
-            Console.WriteLine($"Error loading plugin: {ex.Message}");
+            logger.Error(ex, "Error loading plugin");
+            cli.DisplayError($"Failed to load plugin: {ex.Message}");
         }
     }
 
-    static void UnloadPlugin(string pluginId)
+    private static void HandlePluginUnloadCommand(List<string> args)
     {
+        if (args.Count == 0)
+        {
+            cli.DisplayError("Usage: plugin-unload <plugin-id>");
+            return;
+        }
+
         try
         {
-            Console.WriteLine($"\nUnloading plugin: {pluginId}...");
+            string pluginId = args[0];
+            cli.DisplayInfo($"Unloading plugin: {pluginId}...");
             
             if (pluginManager.UnloadPlugin(pluginId))
             {
-                Console.WriteLine("✓ Plugin unloaded successfully!");
+                cli.DisplaySuccess("Plugin unloaded successfully!");
             }
             else
             {
-                Console.WriteLine("✗ Failed to unload plugin. Check logs for details.");
+                cli.DisplayError("Failed to unload plugin. Check logs for details.");
             }
         }
         catch (Exception ex)
         {
-            logger.Error($"Error unloading plugin: {ex.Message}");
-            Console.WriteLine($"Error unloading plugin: {ex.Message}");
+            logger.Error(ex, "Error unloading plugin");
+            cli.DisplayError($"Failed to unload plugin: {ex.Message}");
+        }
+    }
+
+    // ==================== Helper Methods ====================
+
+    private static string PromptForInput(string prompt)
+    {
+        Console.Write($"{prompt}: ");
+        return Console.ReadLine()?.Trim() ?? string.Empty;
+    }
+
+    private static async Task ShutdownAsync()
+    {
+        logger.Info("Shutting down application");
+        cli.DisplayInfo("Shutting down...");
+        
+        // Stop WebSocket server
+        if (wsManager != null && wsManager.IsRunning)
+        {
+            wsManager.Stop();
+        }
+
+        // Shutdown plugin system
+        if (pluginManager != null)
+        {
+            await Task.Run(() => pluginManager.Shutdown());
+        }
+
+        // Save configuration
+        if (configManager != null)
+        {
+            configManager.SaveConfiguration();
+        }
+
+        logger.Info("Application shutdown complete");
+        cli.DisplaySuccess("Goodbye!");
+    }
+
+    // ==================== Tests ====================
+
+    public class GitDevTests
+    {
+        [Fact]
+        public void ConfigurationManager_ShouldLoadDefaultValues()
+        {
+            var config = new ConfigurationManager();
+            int maxOps = config.GetValue("MaxConcurrentOperations", 0);
+            Assert.True(maxOps > 0);
+        }
+
+        [Fact]
+        public void InteractiveCLI_ParseCommand_ShouldSplitCorrectly()
+        {
+            var cli = new InteractiveCLI();
+            var (command, args) = cli.ParseCommand("clone http://example.com /path/to/repo");
+            
+            Assert.Equal("clone", command);
+            Assert.Equal(2, args.Count);
+            Assert.Equal("http://example.com", args[0]);
+            Assert.Equal("/path/to/repo", args[1]);
         }
     }
 }
