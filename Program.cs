@@ -212,6 +212,19 @@ class GitDev
                 await HandleListReposCommandAsync();
                 break;
 
+            // Collaborator operations
+            case "add-collaborator":
+                await HandleAddCollaboratorCommandAsync(args);
+                break;
+
+            case "remove-collaborator":
+                await HandleRemoveCollaboratorCommandAsync(args);
+                break;
+
+            case "list-collaborators":
+                await HandleListCollaboratorsCommandAsync(args);
+                break;
+
             // Branch operations
             case "branch":
                 await HandleBranchCommandAsync(args);
@@ -365,6 +378,71 @@ class GitDev
     {
         cli.DisplayInfo("Fetching repositories...");
         var repos = await githubRepoManager.ListRepositoriesAsync();
+        
+        if (repos.Count == 0)
+        {
+            cli.DisplayWarning("No repositories found");
+        }
+        else
+        {
+            cli.DisplaySuccess($"Found {repos.Count} repositories");
+        }
+    }
+    
+    private static async Task HandleAddCollaboratorCommandAsync(List<string> args)
+    {
+        string repoName = args.Count > 0 ? args[0] : PromptForInput("Enter repository name");
+        string collaboratorUsername = args.Count > 1 ? args[1] : PromptForInput("Enter collaborator username");
+        string permission = args.Count > 2 ? args[2] : "push";
+        
+        if (await githubRepoManager.AddCollaboratorAsync(repoName, collaboratorUsername, permission))
+        {
+            cli.DisplaySuccess($"Collaborator '{collaboratorUsername}' added to '{repoName}' successfully");
+        }
+        else
+        {
+            cli.DisplayError("Failed to add collaborator");
+        }
+    }
+    
+    private static async Task HandleRemoveCollaboratorCommandAsync(List<string> args)
+    {
+        string repoName = args.Count > 0 ? args[0] : PromptForInput("Enter repository name");
+        string collaboratorUsername = args.Count > 1 ? args[1] : PromptForInput("Enter collaborator username");
+        
+        if (cli.PromptConfirmation($"Are you sure you want to remove '{collaboratorUsername}' from '{repoName}'?"))
+        {
+            if (await githubRepoManager.RemoveCollaboratorAsync(repoName, collaboratorUsername))
+            {
+                cli.DisplaySuccess($"Collaborator '{collaboratorUsername}' removed from '{repoName}' successfully");
+            }
+            else
+            {
+                cli.DisplayError("Failed to remove collaborator");
+            }
+        }
+        else
+        {
+            cli.DisplayInfo("Remove operation cancelled");
+        }
+    }
+    
+    private static async Task HandleListCollaboratorsCommandAsync(List<string> args)
+    {
+        string repoName = args.Count > 0 ? args[0] : PromptForInput("Enter repository name");
+        
+        cli.DisplayInfo($"Fetching collaborators for '{repoName}'...");
+        var collaborators = await githubRepoManager.ListCollaboratorsAsync(repoName);
+        
+        if (collaborators.Count == 0)
+        {
+            cli.DisplayWarning("No collaborators found");
+        }
+        else
+        {
+            cli.DisplaySuccess($"Found {collaborators.Count} collaborators");
+        }
+    }
         
         if (repos.Count > 0)
         {

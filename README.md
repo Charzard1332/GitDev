@@ -7,6 +7,7 @@ GitDev is an advanced command-line tool that allows users to interact with GitHu
 ### Core Functionality
 - 🔑 **OAuth-based GitHub authentication** with improved error handling
 - 📂 **Repository management** - Create, delete, clone, and list repositories
+- 👥 **Collaborator management** - Add, remove, and list repository collaborators
 - 🌿 **Branch management** - Create, merge, rebase, and list branches
 - ⚡ **Git operations** - Push, pull, stash, status checks with retry logic
 - 🔌 **Plugin system** - Extend functionality with custom plugins
@@ -19,6 +20,7 @@ GitDev is an advanced command-line tool that allows users to interact with GitHu
 - ⚙️ **Configuration management** - Persistent settings and preferences
 - 📊 **Enhanced logging** - Structured logging with NLog
 - 🔒 **Thread-safe operations** - Semaphore-based concurrency control
+- 🔁 **Automatic retry logic** - Exponential backoff for API failures and rate limits
 
 ## 🏗️ Architecture
 
@@ -40,6 +42,11 @@ GitDev uses a modular architecture with the following components:
 - `create-repo <name> [private]` - Create a new GitHub repository
 - `delete-repo <name>` - Delete a GitHub repository
 - `list-repos` - List all your GitHub repositories
+
+### Collaborator Operations
+- `add-collaborator <repo> <user> [permission]` - Add a collaborator to a repository
+- `remove-collaborator <repo> <user>` - Remove a collaborator from a repository
+- `list-collaborators <repo>` - List all collaborators of a repository
 
 ### Branch Operations
 - `branch <name>` - Create a new branch
