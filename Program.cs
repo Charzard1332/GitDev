@@ -25,6 +25,12 @@ class GitDev
     private static ConfigurationManager configManager;
     private static PluginManager pluginManager;
 
+    // Analytics managers
+    private static AnalyticsManager analyticsManager;
+    private static PerformanceMonitor performanceMonitor;
+    private static ErrorLogManager errorLogManager;
+    private static DashboardRenderer dashboardRenderer;
+
     // Application state
     private static string currentRepoPath;
     private static bool isRunning = true;
@@ -57,6 +63,13 @@ class GitDev
             int maxConcurrentOps = configManager.GetValue("MaxConcurrentOperations", 3);
             gitOpsManager = new GitOperationsManager(authManager.Username, null, maxConcurrentOps);
             githubRepoManager = new GitHubRepositoryManager(authManager.Client, authManager.Username);
+
+            // Initialize analytics system
+            InitializeAnalyticsSystem();
+
+            // Record user signup/login
+            analyticsManager.RecordSignup(authManager.Username);
+            analyticsManager.RecordUserActive(authManager.Username);
 
             // Initialize plugin system
             await InitializePluginSystemAsync();
@@ -134,6 +147,41 @@ class GitDev
     }
 
     /// <summary>
+    /// Initialize the analytics system.
+    /// </summary>
+    private static void InitializeAnalyticsSystem()
+    {
+        try
+        {
+            logger.Info("Initializing analytics system");
+            
+            // Create data directory in user's home or app directory
+            string dataDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "GitDev",
+                "data"
+            );
+            
+            analyticsManager = new AnalyticsManager(dataDirectory);
+            performanceMonitor = new PerformanceMonitor();
+            errorLogManager = new ErrorLogManager();
+            dashboardRenderer = new DashboardRenderer(
+                analyticsManager,
+                performanceMonitor,
+                errorLogManager,
+                cli
+            );
+            
+            logger.Info("Analytics system initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to initialize analytics system");
+            cli.DisplayWarning("Analytics system initialization failed");
+        }
+    }
+
+    /// <summary>
     /// Main application loop for processing user commands.
     /// </summary>
     private static async Task RunApplicationLoopAsync()
@@ -167,6 +215,31 @@ class GitDev
     {
         logger.Debug($"Processing command: {command}");
 
+        // Track command execution with performance monitoring
+        using (var tracker = performanceMonitor?.StartOperation(command))
+        {
+            try
+            {
+                // Record activity
+                analyticsManager?.RecordActivity(authManager.Username, command, string.Join(" ", args));
+                analyticsManager?.RecordUserActive(authManager.Username);
+
+                await ExecuteCommandAsync(command, args);
+            }
+            catch (Exception ex)
+            {
+                tracker?.MarkAsFailed();
+                errorLogManager?.RecordError(command, ex.Message, ex.ToString());
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Execute the actual command logic.
+    /// </summary>
+    private static async Task ExecuteCommandAsync(string command, List<string> args)
+    {
         switch (command)
         {
             case "help":
@@ -184,6 +257,10 @@ class GitDev
 
             case "config":
                 configManager.DisplayConfiguration();
+                break;
+
+            case "dashboard":
+                HandleDashboardCommand();
                 break;
 
             case "exit":
@@ -806,6 +883,20 @@ class GitDev
         {
             logger.Error(ex, "Error unloading plugin");
             cli.DisplayError($"Failed to unload plugin: {ex.Message}");
+        }
+    }
+
+    private static void HandleDashboardCommand()
+    {
+        try
+        {
+            logger.Info("Displaying analytics dashboard");
+            dashboardRenderer.RenderDashboard();
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Error displaying dashboard");
+            cli.DisplayError($"Failed to display dashboard: {ex.Message}");
         }
     }
 

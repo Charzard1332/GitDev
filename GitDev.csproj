@@ -86,6 +86,10 @@
     <Compile Include="Core\InteractiveCLI.cs" />
     <Compile Include="Core\WebSocketServerManager.cs" />
     <Compile Include="Core\ConfigurationManager.cs" />
+    <Compile Include="Core\AnalyticsManager.cs" />
+    <Compile Include="Core\PerformanceMonitor.cs" />
+    <Compile Include="Core\ErrorLogManager.cs" />
+    <Compile Include="Core\DashboardRenderer.cs" />
     <Compile Include="ExamplePlugin\GreetingPlugin.cs" />
     <Compile Include="Tests\PluginSystemTests.cs" />
     <Compile Include="Tests\CoreComponentsTests.cs" />
