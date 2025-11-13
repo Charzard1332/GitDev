@@ -12,6 +12,9 @@ using NLog;
 using Xunit;
 using WebSocketSharp.Server;
 using WebSocketSharp;
+using GitDev.Plugins;
+using System.Collections.Generic;
+using System.Linq;
 
 class GitDev
 {
@@ -19,6 +22,7 @@ class GitDev
 
     static GitHubClient client;
     static string username;
+    static PluginManager pluginManager;
 
     static string clientId = "Iv23liIAUGDEbAGLQaRr";
     static string clientSecret = "YOUR_CLIENT_SECRET";
@@ -27,6 +31,11 @@ class GitDev
     static async Task Main()
     {
         await AuthenticateUser();
+
+        // Initialize plugin system
+        string pluginDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plugins");
+        pluginManager = PluginManager.GetInstance(pluginDirectory, "1.0.0");
+        pluginManager.Initialize();
 
         Console.Title = "GitDev Login";
         Console.WriteLine($"Welcome, @{username}/root");
@@ -82,6 +91,10 @@ class GitDev
                     break;
                 case "exit":
                     Console.WriteLine("Exiting GitDev.");
+                    if (pluginManager != null)
+                    {
+                        pluginManager.Shutdown();
+                    }
                     return;
                 default:
                     Console.WriteLine("Unknown command. Type 'dev' for available commands.");
@@ -105,6 +118,13 @@ class GitDev
         Console.WriteLine("  dev pull - Pull changes");
         Console.WriteLine("  dev list - List branches");
         Console.WriteLine("  dev status - Show repository status");
+        Console.WriteLine("");
+        Console.WriteLine("Plugin commands:");
+        Console.WriteLine("  dev plugin-list - List all loaded plugins");
+        Console.WriteLine("  dev plugin-info <id> - Get information about a plugin");
+        Console.WriteLine("  dev plugin-run <id> [args] - Execute a plugin");
+        Console.WriteLine("  dev plugin-load <path> - Load a plugin from a file");
+        Console.WriteLine("  dev plugin-unload <id> - Unload a plugin");
     }
 
     static void StartWebSocketServer(string repoPath)
@@ -424,6 +444,41 @@ class GitDev
                 }
                 await DeleteGitHubRepo(repoToDelete);
                 break;
+            case "plugin-list":
+                ListPlugins();
+                break;
+            case "plugin-info":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dev plugin-info <plugin-id>");
+                    return;
+                }
+                ShowPluginInfo(args[1]);
+                break;
+            case "plugin-run":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dev plugin-run <plugin-id> [args]");
+                    return;
+                }
+                await RunPlugin(args[1]);
+                break;
+            case "plugin-load":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dev plugin-load <plugin-path>");
+                    return;
+                }
+                LoadPlugin(args[1]);
+                break;
+            case "plugin-unload":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dev plugin-unload <plugin-id>");
+                    return;
+                }
+                UnloadPlugin(args[1]);
+                break;
             default:
                 Console.WriteLine("Invalid dev command. Type 'dev' for a list of available commands.");
                 break;
@@ -535,6 +590,154 @@ class GitDev
             {
                 Console.WriteLine(branch.FriendlyName);
             }
+        }
+    }
+
+    static void ListPlugins()
+    {
+        try
+        {
+            var plugins = pluginManager.ListPlugins();
+            if (plugins.Count == 0)
+            {
+                Console.WriteLine("No plugins loaded.");
+                return;
+            }
+
+            Console.WriteLine($"\nLoaded Plugins ({plugins.Count}):");
+            Console.WriteLine("".PadRight(60, '-'));
+            foreach (var plugin in plugins)
+            {
+                Console.WriteLine($"ID:          {plugin.Id}");
+                Console.WriteLine($"Name:        {plugin.Name}");
+                Console.WriteLine($"Version:     {plugin.Version}");
+                Console.WriteLine($"Author:      {plugin.Author}");
+                Console.WriteLine($"Description: {plugin.Description}");
+                Console.WriteLine("".PadRight(60, '-'));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error listing plugins: {ex.Message}");
+            Console.WriteLine($"Error listing plugins: {ex.Message}");
+        }
+    }
+
+    static void ShowPluginInfo(string pluginId)
+    {
+        try
+        {
+            var plugin = pluginManager.GetPlugin(pluginId);
+            if (plugin == null)
+            {
+                Console.WriteLine($"Plugin not found: {pluginId}");
+                return;
+            }
+
+            var metadata = plugin.Metadata;
+            Console.WriteLine("\nPlugin Information:");
+            Console.WriteLine("".PadRight(60, '='));
+            Console.WriteLine($"ID:               {metadata.Id}");
+            Console.WriteLine($"Name:             {metadata.Name}");
+            Console.WriteLine($"Version:          {metadata.Version}");
+            Console.WriteLine($"Author:           {metadata.Author}");
+            Console.WriteLine($"Description:      {metadata.Description}");
+            Console.WriteLine($"Min Host Version: {metadata.MinimumHostVersion}");
+            if (metadata.Dependencies != null && metadata.Dependencies.Length > 0)
+            {
+                Console.WriteLine($"Dependencies:     {string.Join(", ", metadata.Dependencies)}");
+            }
+            Console.WriteLine("".PadRight(60, '='));
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error showing plugin info: {ex.Message}");
+            Console.WriteLine($"Error showing plugin info: {ex.Message}");
+        }
+    }
+
+    static async Task RunPlugin(string pluginId)
+    {
+        try
+        {
+            Console.WriteLine($"\nExecuting plugin: {pluginId}...");
+            
+            // For this example, we'll pass some default arguments
+            var args = new Dictionary<string, object>
+            {
+                { "name", username ?? "User" }
+            };
+
+            var result = pluginManager.ExecutePlugin(pluginId, args);
+            
+            if (result.Success)
+            {
+                Console.WriteLine($"✓ Plugin executed successfully!");
+                if (!string.IsNullOrEmpty(result.Message))
+                {
+                    Console.WriteLine($"  Message: {result.Message}");
+                }
+                if (result.Data != null)
+                {
+                    Console.WriteLine($"  Data: {result.Data}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"✗ Plugin execution failed!");
+                Console.WriteLine($"  Error: {result.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error running plugin: {ex.Message}");
+            Console.WriteLine($"Error running plugin: {ex.Message}");
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    static void LoadPlugin(string pluginPath)
+    {
+        try
+        {
+            Console.WriteLine($"\nLoading plugin from: {pluginPath}...");
+            
+            if (pluginManager.LoadPlugin(pluginPath))
+            {
+                Console.WriteLine("✓ Plugin loaded successfully!");
+            }
+            else
+            {
+                Console.WriteLine("✗ Failed to load plugin. Check logs for details.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error loading plugin: {ex.Message}");
+            Console.WriteLine($"Error loading plugin: {ex.Message}");
+        }
+    }
+
+    static void UnloadPlugin(string pluginId)
+    {
+        try
+        {
+            Console.WriteLine($"\nUnloading plugin: {pluginId}...");
+            
+            if (pluginManager.UnloadPlugin(pluginId))
+            {
+                Console.WriteLine("✓ Plugin unloaded successfully!");
+            }
+            else
+            {
+                Console.WriteLine("✗ Failed to unload plugin. Check logs for details.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error unloading plugin: {ex.Message}");
+            Console.WriteLine($"Error unloading plugin: {ex.Message}");
         }
     }
 }
