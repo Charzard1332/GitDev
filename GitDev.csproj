@@ -88,10 +88,14 @@
     <Compile Include="Core\ConfigurationManager.cs" />
     <Compile Include="ExamplePlugin\GreetingPlugin.cs" />
     <Compile Include="Tests\PluginSystemTests.cs" />
+    <Compile Include="Tests\CoreComponentsTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
     <None Include="packages.config" />
+    <None Include="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
