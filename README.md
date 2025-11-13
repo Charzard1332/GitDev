@@ -7,6 +7,7 @@ GitDev is a command-line tool that allows users to interact with GitHub reposito
 - 📂 Create, delete, and clone repositories
 - 🌿 Branch management (create, merge, list branches)
 - ⚡ Git operations like push, pull, and status checks
+- 🔌 Plugin system for extending functionality
 
 ## 📌 Commands
 - 🏗 `dev init` - Initialize a new repo
@@ -21,6 +22,13 @@ GitDev is a command-line tool that allows users to interact with GitHub reposito
 - 📥 `dev pull` - Pull latest changes
 - 📜 `dev list` - List branches
 - 🔍 `dev status` - Shows repo status
+
+### 🔌 Plugin Commands
+- 📋 `dev plugin-list` - List all loaded plugins
+- ℹ️ `dev plugin-info <id>` - Get plugin information
+- ▶️ `dev plugin-run <id>` - Execute a plugin
+- 📥 `dev plugin-load <path>` - Load a plugin from file
+- ❌ `dev plugin-unload <id>` - Unload a plugin
 
 ## 🛠 Prerequisites
 - 🏗 .NET 6.0 or later
@@ -41,6 +49,28 @@ GitDev is a command-line tool that allows users to interact with GitHub reposito
 ## Error Debugging
 - ⚠️ If you receive an authentication error, verify that your OAuth token or PAT has repo permissions.
 - 🚫 If repository creation fails with a `ForbiddenException`, ensure you have the necessary permissions in your GitHub settings.
+
+## 🔌 Plugin System
+
+GitDev supports a modular plugin architecture that allows you to extend its functionality. 
+
+### Creating Plugins
+
+1. Implement the `IPlugin` interface
+2. Compile your plugin as a .NET DLL
+3. Place the DLL in the `plugins` directory
+4. Reload or restart GitDev
+
+For detailed instructions, see [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md).
+
+### Security
+
+The plugin system includes basic security measures:
+- File validation (size, extension)
+- Optional hash-based whitelisting
+- Error isolation
+
+For more information, see [PLUGIN_SECURITY.md](PLUGIN_SECURITY.md).
 
 ## 📝 License
 This project is open-source and available under the **MIT License**.

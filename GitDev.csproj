@@ -71,6 +71,16 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Plugins\IPlugin.cs" />
+    <Compile Include="Plugins\IPluginContext.cs" />
+    <Compile Include="Plugins\PluginMetadata.cs" />
+    <Compile Include="Plugins\PluginResult.cs" />
+    <Compile Include="Plugins\PluginContext.cs" />
+    <Compile Include="Plugins\PluginLoader.cs" />
+    <Compile Include="Plugins\PluginSecurity.cs" />
+    <Compile Include="Plugins\PluginManager.cs" />
+    <Compile Include="ExamplePlugin\GreetingPlugin.cs" />
+    <Compile Include="Tests\PluginSystemTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
