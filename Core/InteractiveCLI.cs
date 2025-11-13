@@ -63,6 +63,14 @@ namespace GitDev.Core
             Console.WriteLine();
             
             Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("Collaborator Operations:");
+            Console.ResetColor();
+            Console.WriteLine("  add-collaborator <repo> <user>    - Add a collaborator to a repository");
+            Console.WriteLine("  remove-collaborator <repo> <user> - Remove a collaborator from a repository");
+            Console.WriteLine("  list-collaborators <repo>         - List all collaborators of a repository");
+            Console.WriteLine();
+            
+            Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("Branch Operations:");
             Console.ResetColor();
             Console.WriteLine("  branch <name>         - Create a new branch");

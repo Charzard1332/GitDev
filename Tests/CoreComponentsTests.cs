@@ -351,6 +351,76 @@ namespace GitDev.Tests
             Assert.False(result);
         }
 
+        [Fact]
+        public async Task GitHubRepositoryManager_AddCollaborator_ShouldReturnFalseForEmptyRepoName()
+        {
+            // Arrange
+            var client = new Octokit.GitHubClient(new Octokit.ProductHeaderValue("test"));
+            var manager = new GitHubRepositoryManager(client, "testuser");
+
+            // Act
+            var result = await manager.AddCollaboratorAsync("", "collaborator");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task GitHubRepositoryManager_AddCollaborator_ShouldReturnFalseForEmptyUsername()
+        {
+            // Arrange
+            var client = new Octokit.GitHubClient(new Octokit.ProductHeaderValue("test"));
+            var manager = new GitHubRepositoryManager(client, "testuser");
+
+            // Act
+            var result = await manager.AddCollaboratorAsync("repo", "");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task GitHubRepositoryManager_RemoveCollaborator_ShouldReturnFalseForEmptyRepoName()
+        {
+            // Arrange
+            var client = new Octokit.GitHubClient(new Octokit.ProductHeaderValue("test"));
+            var manager = new GitHubRepositoryManager(client, "testuser");
+
+            // Act
+            var result = await manager.RemoveCollaboratorAsync("", "collaborator");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task GitHubRepositoryManager_RemoveCollaborator_ShouldReturnFalseForEmptyUsername()
+        {
+            // Arrange
+            var client = new Octokit.GitHubClient(new Octokit.ProductHeaderValue("test"));
+            var manager = new GitHubRepositoryManager(client, "testuser");
+
+            // Act
+            var result = await manager.RemoveCollaboratorAsync("repo", "");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task GitHubRepositoryManager_ListCollaborators_ShouldReturnEmptyListForEmptyRepoName()
+        {
+            // Arrange
+            var client = new Octokit.GitHubClient(new Octokit.ProductHeaderValue("test"));
+            var manager = new GitHubRepositoryManager(client, "testuser");
+
+            // Act
+            var result = await manager.ListCollaboratorsAsync("");
+
+            // Assert
+            Assert.Empty(result);
+        }
+
         // Cleanup
         ~CoreComponentsTests()
         {
