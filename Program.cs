@@ -35,6 +35,9 @@ class GitDev
     private static string currentRepoPath;
     private static bool isRunning = true;
 
+	// Test
+	public static string = "Test";
+
     // Configuration constants
     private const string CLIENT_ID = "Iv23liIAUGDEbAGLQaRr";
     private const string CLIENT_SECRET = "YOUR_CLIENT_SECRET";
