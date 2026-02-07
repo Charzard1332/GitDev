@@ -36,7 +36,7 @@ class GitDev
     private static bool isRunning = true;
 
 	// Test
-	public static string = "Test";
+	public static string = "HEllo Test";
 
     // Configuration constants
     private const string CLIENT_ID = "Iv23liIAUGDEbAGLQaRr";
