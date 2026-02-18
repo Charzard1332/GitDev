@@ -40,7 +40,8 @@ class GitDev
 	public static string Test2 = "Hello Test";
 	public static string Test3 = "Hello Test";
 	public static string Test4 = "Hello Flame";
-
+    public static string Test5 = "Hello Peoples";
+    public static string Test6 = "Hello World";
     // Configuration constants
     private const string CLIENT_ID = "Iv23liIAUGDEbAGLQaRr";
     private const string CLIENT_SECRET = "YOUR_CLIENT_SECRET";
